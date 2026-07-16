@@ -56,6 +56,28 @@ safe-rm -r /var/lib/apt/lists/* || true
 safe-rm -r /var/log/installer || true
 safe-rm /var/lib/dpkg/*-old || true
 safe-rm /var/cache/debconf/*-old || true
+
+## non-deterministic
+## /var/cache/debconf/config.dat differs build-to-build (install-order-dependent
+## Owners/Flags, or a package storing a temp path/PID). Delete the debconf ANSWERS
+## databases only. Safe on a shipped image: debconf is read only during dpkg
+## install/reconfigure, never at boot; the real config lives in each package's /etc
+## files (already written by postinst). passwords.dat may also hold secrets (mode
+## 600) -- delete on security grounds too. Do NOT delete templates.dat: it holds the
+## question templates; removing it breaks dpkg-reconfigure (2014 regression:
+## `dpkg-reconfigure console-data` -> keymap "NONE") and it is deterministic anyway.
+safe-rm --force /var/cache/debconf/config.dat || true
+safe-rm --force /var/cache/debconf/passwords.dat || true
+
+## non-deterministic
+## /usr/lib/<multiarch>/vlc/plugins/plugins.dat -- VLC's plugin cache, written by
+## vlc-cache-gen in raw readdir order (VLC's AllocatePluginDir does not sort and
+## ignores SOURCE_DATE_EPOCH), so it differs build-to-build. No in-chroot way to
+## regenerate it deterministically without patching VLC. Safe to delete: VLC scans
+## plugins at startup when the cache is absent, and Debian's dpkg trigger on
+## /usr/lib/*/vlc/plugins rebuilds it on the next apt transaction (Debian #755154).
+safe-rm --force /usr/lib/*/vlc/plugins/plugins.dat || true
+
 ## Erase rotated logs (usually won't appear unless you left your VM running for several days).
 safe-rm /var/log/*.[0-9] || true
 safe-rm /var/log/*.[0-9].gz || true
