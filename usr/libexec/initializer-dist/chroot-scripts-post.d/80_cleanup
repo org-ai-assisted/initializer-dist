@@ -29,11 +29,11 @@ true "INFO: Cleaning up..."
 ## Kill dhclient3 to prevent rewrite of /var/lib/dhcp/*.
 killall dhclient3 || true
 ## There are .leases.
-safe-rm /var/lib/dhcp/*.leases || true
+safe-rm -- /var/lib/dhcp/*.leases || true
 ## And there are .lease.
-safe-rm /var/lib/dhcp/*.lease || true
+safe-rm -- /var/lib/dhcp/*.lease || true
 ## We are best of deleting the whole folder.
-safe-rm -r /var/lib/dhcp/* || true
+safe-rm -r -- /var/lib/dhcp/* || true
 
 ## Cleanup.
 ## || true to support re-running the script.
@@ -49,13 +49,13 @@ apt-get --yes clean || true
 ## safe-rm -r /var/lib/tor/* || true
 
 ## Delete logs and other stuff.
-safe-rm -r /tmp/* || true
-safe-rm /var/log/installer/* || true
-safe-rm -r /var/cache/apt/* || true
-safe-rm -r /var/lib/apt/lists/* || true
-safe-rm -r /var/log/installer || true
-safe-rm /var/lib/dpkg/*-old || true
-safe-rm /var/cache/debconf/*-old || true
+safe-rm -r -- /tmp/* || true
+safe-rm -- /var/log/installer/* || true
+safe-rm -r -- /var/cache/apt/* || true
+safe-rm -r -- /var/lib/apt/lists/* || true
+safe-rm -r -- /var/log/installer || true
+safe-rm -- /var/lib/dpkg/*-old || true
+safe-rm -- /var/cache/debconf/*-old || true
 
 ## non-deterministic
 ## /var/cache/debconf/config.dat differs build-to-build (install-order-dependent
@@ -66,8 +66,8 @@ safe-rm /var/cache/debconf/*-old || true
 ## 600) -- delete on security grounds too. Do NOT delete templates.dat: it holds the
 ## question templates; removing it breaks dpkg-reconfigure (2014 regression:
 ## `dpkg-reconfigure console-data` -> keymap "NONE") and it is deterministic anyway.
-safe-rm --force /var/cache/debconf/config.dat || true
-safe-rm --force /var/cache/debconf/passwords.dat || true
+safe-rm --force -- /var/cache/debconf/config.dat || true
+safe-rm --force -- /var/cache/debconf/passwords.dat || true
 
 ## non-deterministic
 ## /usr/lib/<multiarch>/vlc/plugins/plugins.dat -- VLC's plugin cache, written by
@@ -76,27 +76,27 @@ safe-rm --force /var/cache/debconf/passwords.dat || true
 ## regenerate it deterministically without patching VLC. Safe to delete: VLC scans
 ## plugins at startup when the cache is absent, and Debian's dpkg trigger on
 ## /usr/lib/*/vlc/plugins rebuilds it on the next apt transaction (Debian #755154).
-safe-rm --force /usr/lib/*/vlc/plugins/plugins.dat || true
+safe-rm --force -- /usr/lib/*/vlc/plugins/plugins.dat || true
 
 ## Erase rotated logs (usually won't appear unless you left your VM running for several days).
-safe-rm /var/log/*.[0-9] || true
-safe-rm /var/log/*.[0-9].gz || true
+safe-rm -- /var/log/*.[0-9] || true
+safe-rm -- /var/log/*.[0-9].gz || true
 
 ## Deletes /etc/system/sysinit.target.wants/systemd-timesyncd.service.
 ## Otherwise timedatectl still thinks systemd-timesyncd is enabled.
 timedatectl set-ntp false >/dev/null 2>&1 || true
 ## Make sure it gets really deleted even if timedatectl does not work.
-safe-rm --force /etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service
+safe-rm --force -- /etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service
 
 ## Deletes /etc/apt/sources.list.d/derivative.sources.
 ## Otherwise garbage apt config pointing to the derivative-maker approx proxy
 ## will be left on the disk.
-safe-rm --force /etc/apt/sources.list.d/derivative.sources
+safe-rm --force -- /etc/apt/sources.list.d/derivative.sources
 
 ## Deletes /etc/apt/sources.list.
 ## This file is no longer used since we've switched to deb822 format, and it
 ## ends up being left as a blank file on the disk.
-safe-rm --force /etc/apt/sources.list
+safe-rm --force -- /etc/apt/sources.list
 
 ## non-deterministic [0]
 ## /var/lib/dpkg/available
@@ -120,10 +120,10 @@ fi
 ## /var/lib/urandom/random-seed
 ## This is no longer required for Debian Jessie?
 ## Should always be deleted for security reasons.
-safe-rm --force /var/lib/urandom/random-seed
+safe-rm --force -- /var/lib/urandom/random-seed
 
-safe-rm --force /var/lib/systemd/random-seed
-safe-rm --force /var/lib/random-seed
+safe-rm --force -- /var/lib/systemd/random-seed
+safe-rm --force -- /var/lib/random-seed
 
 ## non-deterministic
 ## /etc/nvme/hostid
@@ -131,31 +131,31 @@ safe-rm --force /var/lib/random-seed
 ## nvme-cli generates these randomly at install time (a different value per build). A
 ## shipped image must not carry a build-host id; they are re-created as needed on first
 ## boot. Deletion mirrors the random-seed handling above.
-safe-rm --force /etc/nvme/hostid
-safe-rm --force /etc/nvme/hostnqn
+safe-rm --force -- /etc/nvme/hostid
+safe-rm --force -- /etc/nvme/hostnqn
 
 ## non-deterministic
 ## /var/lib/dkms/<module>/<version>/<kernel>/<arch>/log/make.log
 ## dkms leaves a build log with timestamps when it builds a module in-chroot (e.g. tirdad).
 ## A shipped image should not carry build logs; the built modules stay, only the log goes.
-find /var/lib/dkms -type f -name 'make.log' -exec safe-rm --force {} \; || true
+find /var/lib/dkms -type f -name 'make.log' -exec safe-rm --force -- {} \; || true
 
 ## non-deterministic
 ## /run/blkid/blkid.tab
 ## /run/blkid/blkid.tab.old
 ## /run is runtime tmpfs state and must be empty in a shipped image, but a build-time blkid
 ## run leaked the disk-uuid cache into the rootfs. Strip it.
-safe-rm -r /run/blkid/* || true
+safe-rm -r -- /run/blkid/* || true
 
 ## non-deterministic [21]
 ## Only required when using the anon-shared-build-inst-tb chroot-post.d script.
 ## No need to manually re-create it.
 ## Gets automatically re-created on next run of tb-updater.
 ## This is no longer required for Debian Jessie?
-safe-rm -r /var/cache/tb-binary/.cache/tb/gpgtmpdir || true
+safe-rm -r -- /var/cache/tb-binary/.cache/tb/gpgtmpdir || true
 
 ## Leftover from build process using mmdebstrap.
-safe-rm --force /etc/apt/apt.conf.d/99mmdebstrap
+safe-rm --force -- /etc/apt/apt.conf.d/99mmdebstrap
 
 ## Truncate all log files, keeping user groups and permissions.
 find /var/log -type f -exec cp /dev/null {} \;
@@ -163,10 +163,10 @@ find /var/log -type f -exec cp /dev/null {} \;
 [[ -v user_name ]] || user_name="user"
 
 ## Delete bash history.
-safe-rm "/home/$user_name/.bash_history" || true
-safe-rm "/home/$user_name/.Xauthority" || true
-safe-rm "/root/.bash_history" || true
-safe-rm "/root/.Xauthority" || true
+safe-rm -- "/home/$user_name/.bash_history" || true
+safe-rm -- "/home/$user_name/.Xauthority" || true
+safe-rm -- "/root/.bash_history" || true
+safe-rm -- "/root/.Xauthority" || true
 history -c || true
 
 sync
