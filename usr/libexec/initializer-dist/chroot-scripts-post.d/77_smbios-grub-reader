@@ -1,0 +1,60 @@
+#!/bin/bash
+
+## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+set -x
+set -e
+set -o pipefail
+
+## Add a grub.cfg SMBIOS Type 11 cmdline reader to vm images, so a boot-tester can inject extra
+## kernel cmdline through the real firmware -> GRUB -> kernel chain via 'qemu -smbios'
+## ('dm-qemu --smbios-append') with no image edit. Done here, in the already-mounted chroot after
+## grml-debootstrap has generated grub.cfg, so no separate mount is needed. With no SMBIOS string
+## set the reader is a no-op; '--smbios false' (dist_build_smbios) omits it. dist_build_smbios and
+## dist_build_iso reach this chroot via the build's environment (help-steps/variables preserve list).
+
+## iso images get the reader from build-steps.d/3600_convert-raw-to-iso (the live-build grub.cfg),
+## not from the grub.cfg on this raw.
+if [ "${dist_build_iso:-}" = "true" ]; then
+   true "INFO: dist_build_iso is true, skipping (iso grub.cfg is handled by 3600)."
+   exit 0
+fi
+
+if [ "${dist_build_smbios:-}" != "true" ]; then
+   true "INFO: dist_build_smbios is not 'true', skipping the SMBIOS grub reader."
+   exit 0
+fi
+
+grub_cfg="/boot/grub/grub.cfg"
+if [ ! -f "$grub_cfg" ]; then
+   echo "ERROR: $grub_cfg not found; cannot add the SMBIOS reader." >&2
+   exit 1
+fi
+
+## Idempotent: skip if a reader is already present (e.g. a rebuild over an existing raw).
+if grep -q 'dm_smbios_extra' "$grub_cfg"; then
+   true "INFO: SMBIOS reader already present in $grub_cfg, nothing to do."
+   exit 0
+fi
+
+## Append ' ${dm_smbios_extra}' to every kernel line. Single-quoted so this shell does not expand
+## the placeholder; sed writes it literally so GRUB expands it at boot. Editing the generated
+## grub.cfg (rather than /etc/default/grub) keeps the placeholder literal; grub-mkconfig would
+## expand it to empty at generation time.
+# shellcheck disable=SC2016 # ${dm_smbios_extra} must stay literal for GRUB to expand at boot.
+sed -i -E '/^[[:space:]]*linux(16|efi)?[[:space:]]/ s/$/ ${dm_smbios_extra}/' "$grub_cfg"
+
+## Append the reader. It runs at parse time (top level), so ${dm_smbios_extra} is set before any
+## menuentry body executes. Read an SMBIOS Type 11 OEM string (qemu -smbios
+## type=11,value=dm-cmdline=...; offset 5 is the first Type 11 string) and, if it carries the
+## 'dm-cmdline=' sentinel, expose the rest as ${dm_smbios_extra}. The regexp and smbios modules are
+## in Debian's signed grub, so this works on BIOS, EFI, and EFI+Secure-Boot; with no SMBIOS string
+## set the reader is a no-op and ${dm_smbios_extra} stays empty.
+# shellcheck disable=SC2016 # grub vars ${dm_smbios_oem}/${dm_smbios_extra} must stay literal for GRUB.
+printf '%s\n' \
+   'insmod regexp' \
+   'insmod smbios' \
+   'smbios --type 11 --get-string 5 --set dm_smbios_oem' \
+   'regexp --set 1:dm_smbios_extra "^dm-cmdline=(.*)" "${dm_smbios_oem}"' \
+   >> "$grub_cfg"
