@@ -11,18 +11,13 @@ set -o pipefail
 ## kernel cmdline through the real firmware -> GRUB -> kernel chain via 'qemu -smbios'
 ## ('dm-qemu --smbios-append') with no image edit. Done here, in the already-mounted chroot after
 ## grml-debootstrap has generated grub.cfg, so no separate mount is needed. With no SMBIOS string
-## set the reader is a no-op; '--smbios false' (dist_build_smbios) omits it. dist_build_smbios and
-## dist_build_iso reach this chroot via the build's environment (help-steps/variables preserve list).
+## set the reader is a no-op. dist_build_iso reaches this chroot via the build's environment
+## (help-steps/variables preserve list).
 
-## iso images get the reader from build-steps.d/3600_convert-raw-to-iso (the live-build grub.cfg),
-## not from the grub.cfg on this raw.
+## iso images get the reader from the live-build binary hook staged by
+## build-steps.d/3600_convert-raw-to-iso, not from the grub.cfg on this raw.
 if [ "${dist_build_iso:-}" = "true" ]; then
-   true "INFO: dist_build_iso is true, skipping (iso grub.cfg is handled by 3600)."
-   exit 0
-fi
-
-if [ "${dist_build_smbios:-}" != "true" ]; then
-   true "INFO: dist_build_smbios is not 'true', skipping the SMBIOS grub reader."
+   true "INFO: dist_build_iso is true, skipping (iso grub.cfg is handled by the live-build hook)."
    exit 0
 fi
 
