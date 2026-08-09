@@ -72,6 +72,7 @@ if [ -f /var/cache/debconf/passwords.dat ]; then
       printf '%s\n' "ERROR: ${own_filename}: /var/cache/debconf/passwords.dat holds stored answers." >&2
       printf '%s\n' "A password was captured during the build; refusing to ship it or to delete it silently." >&2
       printf '%s\n' "affected question(s):" >&2
+      ## FIXME: Only print question names that have an associated value.
       grep -- '^Name:' /var/cache/debconf/passwords.dat >&2
       exit 1
    fi
@@ -94,8 +95,9 @@ fi
 ## One pipeline rather than a name loop: debconf-communicate reads its commands from stdin,
 ## so the matched question names go straight in. The pattern covers the BIOS variant
 ## (grub-pc) and the _empty / _disks_changed companions, which record device paths too.
-grep --only-matching --extended-regexp -- 'grub-[^/[:space:]]+/install_devices[a-z_]*' \
+grep --only-matching --extended-regexp -- '^Name: grub-[^/[:space:]]+/install_devices[a-z_]*' \
    /var/cache/debconf/config.dat \
+   | cut -d' ' -f2- \
    | LC_ALL=C sort --unique \
    | sed 's/^/RESET /' \
    | debconf-communicate >/dev/null || true
@@ -106,13 +108,16 @@ grep --only-matching --extended-regexp -- 'grub-[^/[:space:]]+/install_devices[a
 ## already taken. Measured on a real image, config.dat contains exactly ONE /dev/ reference --
 ## the grub answer reset above -- so this fires only on a genuine leftover. Block devices are
 ## matched specifically, so a legitimate /dev/null answer never trips it.
-debconf_device_leak_pattern='/dev/(loop|mapper/loop|sd[a-z]|nvme[0-9]|vd[a-z]|xvd[a-z])'
-if grep --quiet --extended-regexp -- "${debconf_device_leak_pattern}" /var/cache/debconf/config.dat; then
+debconf_device_leak_pattern='/dev/(loop|mapper|sd[a-z]|nvme[0-9]|vd[a-z]|xvd[a-z]|md[0-9]|mmcblk[0-9]|nbd[0-9])'
+if debconf_device_leak_detect_output="$(grep \
+   --before-context=2 --extended-regexp -- "${debconf_device_leak_pattern}" \
+   /var/cache/debconf/config.dat >&2)"; then
    printf '%s\n' "ERROR: ${own_filename}: build-host device references remain in /var/cache/debconf/config.dat:" >&2
-   grep --before-context=2 --extended-regexp -- "${debconf_device_leak_pattern}" /var/cache/debconf/config.dat >&2
+   printf '%s\n' "${debconf_device_leak_detect_output}"
    exit 1
 fi
 unset debconf_device_leak_pattern
+unset debconf_device_leak_detect_output
 
 ## Do NOT delete templates.dat: it holds the question templates; removing it breaks
 ## dpkg-reconfigure (2014 regression: `dpkg-reconfigure console-data` -> keymap "NONE").
@@ -122,6 +127,9 @@ unset debconf_device_leak_pattern
 ## differing bytes between two independent builds (it records per-file identity, not just
 ## paths). Safe to delete: ldconfig recreates it on the next run, and any package install
 ## triggers one.
+##
+## TODO: Verify that AI is correct about how the aux-cache works (this must be
+## done by a human)
 safe-rm --force -- /var/cache/ldconfig/aux-cache || true
 
 ## non-deterministic
@@ -135,6 +143,12 @@ safe-rm --force -- /var/cache/ldconfig/aux-cache || true
 ## way to recover it -- and this runs late in the build, after the answers that produced it
 ## are gone. Stage the sorted copy in /etc so the rename is within one filesystem, carry
 ## the original mode and owner onto it, then rename over the original.
+##
+## TODO: We can just use sponge instead of this complex dance. It isn't quite
+## atomic, but the only reasonable way it could fail is if the I/O itself
+## fails, and if that happens the build would probably crash later on anyway.
+## Preserve the comment bellow about Lintian's misbehavior and the TODO
+## beneath it when rewriting this, so that a human remembers to file a bug.
 if [ -f /etc/locale.conf ]; then
    locale_conf_sorted="$(mktemp -- /etc/locale.conf.XXXXXXXX)"
    chmod --reference=/etc/locale.conf -- "${locale_conf_sorted}"
@@ -143,9 +157,11 @@ if [ -f /etc/locale.conf ]; then
    ## a dot in the referenced FILENAME, so a --reference to this file raises a false positive
    ## -- no such spec is present -- but genmkfile fails closed on any lintian tag, so it
    ## broke the build. Passing uid:gid gives lintian no dot to misread, and is exact rather
-   ## than suppressed. Do not restore the --reference form here, and do not name the
-   ## offending command in a comment either: lintian greps the whole FILE, so even an
-   ## explanation of the problem can re-trigger it.
+   ## than suppressed. Do not name the offending command in a comment: lintian greps the
+   ## whole FILE, so even an explanation of the problem can re-trigger it.
+   ##
+   ## TODO: File a bug report against Lintian for this behavior (this MUST be
+   ## done by a human, AI must NOT file the report on its own).
    locale_conf_owner="$(stat --format='%u:%g' -- /etc/locale.conf)"
    chown -- "${locale_conf_owner}" "${locale_conf_sorted}"
    LC_ALL=C sort -- /etc/locale.conf | tee -- "${locale_conf_sorted}" >/dev/null
@@ -215,6 +231,19 @@ safe-rm --force -- /var/lib/random-seed
 ## nvme-cli generates these randomly at install time (a different value per build). A
 ## shipped image must not carry a build-host id; they are re-created as needed on first
 ## boot. Deletion mirrors the random-seed handling above.
+##
+## FIXME: These files are not regenerated after a reboot despite the claim made
+## above (at least not in a Whonix-Workstation VirtualBox VM). It does not
+## appear it will be regenerated when running an `nvme` command either, see the
+## note in
+## https://manpages.debian.org/testing/nvme-cli/nvme-connect-all.1.en.html:
+##
+##     Overrides the default Host NQN that identifies the NVMe Host. If this
+##     option is not specified, the default is read from /etc/nvme/hostnqn
+##     first. If that does not exist, the autogenerated NQN value from the NVMe
+##     Host kernel module is used next.
+##
+## Revisit, this may need more careful handling.
 safe-rm --force -- /etc/nvme/hostid
 safe-rm --force -- /etc/nvme/hostnqn
 
