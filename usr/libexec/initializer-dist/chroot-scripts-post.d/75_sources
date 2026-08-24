@@ -3,14 +3,26 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## Keep the command trace: it is this script's diagnostic output.
 set -x
-set -e
+set -o errexit
+set -o nounset
 set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
 
-own_filename="$(basename "$BASH_SOURCE")"
-for skip_script in $SKIP_SCRIPTS; do
-   if [ "$skip_script" = "$own_filename" ]; then
-      true "INFO: Skipping $own_filename, because SKIP_SCRIPTS includes it."
+own_filename="$(basename -- "${BASH_SOURCE[0]}")"
+
+## SKIP_SCRIPTS is an optional space-separated list from the chroot runner, so
+## an unset read aborts EVERY build under nounset. Its two siblings in this
+## directory -- 80_cleanup and 20_sanity_checks -- already default it; this one
+## was missed. The expansion stays UNQUOTED because splitting the list into
+## words is the point.
+# shellcheck disable=SC2086
+for skip_script in ${SKIP_SCRIPTS:-}; do
+   if [ "${skip_script}" = "${own_filename}" ]; then
+      true "INFO: Skipping ${own_filename}, because SKIP_SCRIPTS includes it."
       exit 0
    fi
 done
