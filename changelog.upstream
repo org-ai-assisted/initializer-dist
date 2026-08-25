@@ -1,9 +1,159 @@
+commit a7912d1e5759f994f17b66d4aca23cf21ef706c7
+Merge: b576539 60c63b7
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Aug 24 01:27:21 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/ai'
+
+commit b576539ba1e6df2fe6da8c64750ffc7dbbd71d2f
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Aug 10 17:07:22 2026 +0000
+
+    bumped changelog version
+
 commit 7ddfc812d76a45e8f7ef402be355dac06e4fbaab
 Merge: 6e5797a 80f0cf8
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sun Aug 9 02:49:48 2026 -0400
 
     Merge remote-tracking branch 'refs/remotes/ArrayBolt3/arraybolt3/trixie'
+
+commit 60c63b73c654c93ea71081ca97722e959ac48903
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Sat Aug 8 04:55:42 2026 -0400
+
+    CI: enrol in the pre-push static gate
+
+    This repo had no GitHub Actions workflow at all, so nothing verified its PRs on
+    the server side -- the only gate was ci-repro run locally.
+
+    The workflow file is the canonical consumer template, copied verbatim from
+    developer-meta-files/consumer-templates/.github/workflows/. It is managed: once
+    present, dm-packaging-helper-script's pkg_update_consumer_workflows keeps it in
+    sync, so it must not be hand-edited here.
+
+    Enrolment is deliberately a SEPARATE act from propagation: that function uses
+    pkg_update_if_exists, which only updates a workflow that already exists, and
+    pkg_install_dependabot_yml skips any repo with no .github/workflows/ directory.
+    Neither creates the first one. Hence this commit.
+
+    Scope: the repos this session actually changed and that ship shell code -- not
+    every repo lacking CI. Enrolling a repo consumes shared org-wide Actions
+    concurrency (20 jobs, the real limit; public repos are not minute-billed), so it
+    is worth spending where there is signal.
+
+    Verified BEFORE enrolling: 'ci-repro.sh --worktree' passes for this repo, so the
+    gate arrives green rather than turning someone's PR red on arrival.
+
+    NOTE, so it is not a surprise: creating .github/workflows/ makes this repo
+    eligible for the canonical .github/dependabot.yml on the next propagation pass,
+    which pkg_install_dependabot_yml installs into any repo that uses Actions.
+
+commit 2848b25e7bc50973f7724f035b18374aae3be02f
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 14:52:50 2026 -0400
+
+    restore 'set -x' dropped by the strict-mode pass
+
+    The R-010 conversion replaced each script's existing preamble wholesale and did
+    not carry 'set -x' across. That is a silent loss of diagnostic output, and for
+    several of these it is the only output there is:
+
+    - build-time scripts (hardened-kernel build / download / ci_test, tirdad
+      build.sh, initializer-dist chroot-scripts-post.d): the trace IS the build log,
+      so a failing invocation and its expanded arguments become unavailable exactly
+      when they are needed.
+    - boot-time scripts (libvirt-dist, repository-dist-initializer).
+    - scripts whose only messages are 'true "INFO: ..."' lines, which produce
+      nothing on their own -- removing xtrace silences them completely.
+    - test harnesses (tb-updater unit_test, sdwdate-gui fuzzer), where the trace is
+      the point.
+
+    It was also inconsistent: initializer-dist's 80_cleanup kept it while its four
+    siblings in the same directory lost it.
+
+    Nothing asked for this and no commit described it as intentional, so it is
+    restored everywhere it was active.
+
+    Found by codex on initializer-dist. The other 19 files came from auditing the
+    whole pass for the same pattern.
+
+    Testing
+    -------
+
+    Gate exit 0 in an ISOLATED checkout, all eleven packages.
+
+    Audit: ~/strict-pass-tests/audit-stripped-setx.sh, which compares every file
+    changed on an 'ai' branch against org-ai-assisted/master and reports any that
+    had 'set -x' and no longer do.
+
+      before:  examined 43 package(s) on branch ai, 342 changed file(s); 23 stripped
+      after:   examined 43 package(s) on branch ai, 342 changed file(s);  0 stripped
+
+    The audit prints its own coverage, and fails outright if it examines zero
+    packages. Its first version tested '[ -d "$pkg/.git" ]', which is false for a
+    submodule -- .git is a FILE there -- so it skipped all 43 and reported nothing
+    stripped. A count that can be read is the difference between "clean" and "never
+    looked".
+
+commit 4ef9c56dfb245c80f495e55a4d40de0dd9182edb
+Merge: 5adad99 6e5797a
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 12:32:16 2026 -0400
+
+    Merge org-ai-assisted/master into ai
+
+    The branch was created from a stale local master, so its PR diff showed
+    master's newer commits -- including a changelog version bump -- as REMOVALS.
+    Merging rather than rebasing, per the no-history-rewrites rule.
+
+commit 5adad9999faaa1ef981b23881e1b58219d0c853f
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 10:52:45 2026 -0400
+
+    initializer-dist: R-010 strict mode for the 4 standalone scripts
+
+    Files: usr/libexec/initializer-dist/75_growfs and
+    usr/libexec/initializer-dist/chroot-scripts-post.d/{75_autologin,
+    75_setup-wizard-dist,75_sources}.
+
+    Real nounset trap, on the build path
+    ------------------------------------
+
+    75_sources read $SKIP_SCRIPTS bare. That variable is the chroot runner's
+    OPTIONAL space-separated list of scripts to skip, so unset is the normal case
+    -- most builds skip nothing -- and under nounset an unset read would have
+    aborted every image build at this script.
+
+    Its two siblings in the same directory already default it: 80_cleanup uses
+    '${SKIP_SCRIPTS:-}' and 20_sanity_checks '${SKIP_SCRIPTS-}'. 75_sources was
+    simply missed. The expansion stays UNQUOTED, with SC2086 stated, because
+    splitting the list into words is the point.
+
+    Also: 'basename "$BASH_SOURCE"' -> 'basename -- "${BASH_SOURCE[0]}"', plus the
+    usual braces and quoting.
+
+    Testing
+    -------
+
+    Gate exit 0 in an ISOLATED checkout.
+
+    New harness at ~/strict-pass-tests/id-test/. These are BUILD-TIME scripts, so
+    nothing may touch the host: every absolute path is redirected into a fake root
+    and apt, dpkg, systemctl, growpart and the rest are stubbed. All four scripts
+    are run across five SKIP_SCRIPTS states -- unset, empty, naming this script,
+    naming only others, and naming this script among others.
+
+      20 same, 0 differing
+
+    Canary: reverting just the '${SKIP_SCRIPTS:-}' default reproduces the abort on
+    the unset case.
+
+    Harness note worth recording: the first version passed 'SKIP_SCRIPTS=a b' to
+    env through an UNQUOTED expansion, so env split it and took the second name as
+    the command to run. Every multi-name case came back exit 127 -- the shell's
+    "command not found" -- while reporting SAME. A space-separated list has to be
+    passed as one assignment.
 
 commit 80f0cf8ebc4815f33b1a2cc11d8b5a76c0d46927
 Merge: 67a5aa4 6e5797a
