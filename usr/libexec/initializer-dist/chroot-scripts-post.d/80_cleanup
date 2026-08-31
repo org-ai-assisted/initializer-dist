@@ -128,7 +128,7 @@ unset debconf_device_leak_detect_output
 ## paths). Safe to delete: ldconfig recreates it on the next run, and any package install
 ## triggers one.
 ##
-## TODO: Verify that AI is correct about how the aux-cache works (this must be
+## TODO-HUMAN-ONLY: Verify that AI is correct about how the aux-cache works (this must be
 ## done by a human)
 safe-rm --force -- /var/cache/ldconfig/aux-cache || true
 
@@ -160,7 +160,7 @@ if [ -f /etc/locale.conf ]; then
    ## than suppressed. Do not name the offending command in a comment: lintian greps the
    ## whole FILE, so even an explanation of the problem can re-trigger it.
    ##
-   ## TODO: File a bug report against Lintian for this behavior (this MUST be
+   ## TODO-HUMAN-ONLY: File a bug report against Lintian for this behavior (this MUST be
    ## done by a human, AI must NOT file the report on its own).
    locale_conf_owner="$(stat --format='%u:%g' -- /etc/locale.conf)"
    chown -- "${locale_conf_owner}" "${locale_conf_sorted}"
