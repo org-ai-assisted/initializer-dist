@@ -10,6 +10,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 own_filename="$(basename -- "${BASH_SOURCE[0]}")"
 ## SKIP_SCRIPTS is an optional space-separated list from the chroot runner; default it
@@ -98,7 +99,7 @@ fi
 grep --only-matching --extended-regexp -- '^Name: grub-[^/[:space:]]+/install_devices[a-z_]*' \
    /var/cache/debconf/config.dat \
    | cut -d' ' -f2- \
-   | LC_ALL=C sort --unique \
+   | sort --unique \
    | sed 's/^/RESET /' \
    | debconf-communicate >/dev/null || true
 
@@ -137,36 +138,8 @@ safe-rm --force -- /var/cache/ldconfig/aux-cache || true
 ## assignment lines in a non-deterministic order, so two builds differ by line order alone.
 ## Sort it: the header comment sorts before the KEY=value lines, and the relative order of
 ## those lines is irrelevant to every consumer.
-##
-## Replace it atomically. Writing the sorted content back over the live file truncates it
-## first, so an interrupted write leaves the locale configuration empty or partial with no
-## way to recover it -- and this runs late in the build, after the answers that produced it
-## are gone. Stage the sorted copy in /etc so the rename is within one filesystem, carry
-## the original mode and owner onto it, then rename over the original.
-##
-## TODO: We can just use sponge instead of this complex dance. It isn't quite
-## atomic, but the only reasonable way it could fail is if the I/O itself
-## fails, and if that happens the build would probably crash later on anyway.
-## Preserve the comment bellow about Lintian's misbehavior and the TODO
-## beneath it when rewriting this, so that a human remembers to file a bug.
 if [ -f /etc/locale.conf ]; then
-   locale_conf_sorted="$(mktemp -- /etc/locale.conf.XXXXXXXX)"
-   chmod --reference=/etc/locale.conf -- "${locale_conf_sorted}"
-   ## Numeric owner via stat, NOT a --reference to the file itself. lintian's
-   ## script/deprecated ownership check greps for the old dotted user/group form and matches
-   ## a dot in the referenced FILENAME, so a --reference to this file raises a false positive
-   ## -- no such spec is present -- but genmkfile fails closed on any lintian tag, so it
-   ## broke the build. Passing uid:gid gives lintian no dot to misread, and is exact rather
-   ## than suppressed. Do not name the offending command in a comment: lintian greps the
-   ## whole FILE, so even an explanation of the problem can re-trigger it.
-   ##
-   ## TODO-HUMAN-ONLY: File a bug report against Lintian for this behavior (this MUST be
-   ## done by a human, AI must NOT file the report on its own).
-   locale_conf_owner="$(stat --format='%u:%g' -- /etc/locale.conf)"
-   chown -- "${locale_conf_owner}" "${locale_conf_sorted}"
-   LC_ALL=C sort -- /etc/locale.conf | tee -- "${locale_conf_sorted}" >/dev/null
-   mv -- "${locale_conf_sorted}" /etc/locale.conf
-   unset locale_conf_sorted locale_conf_owner
+   sort -- /etc/locale.conf | sponge -- /etc/locale.conf
 fi
 
 ## non-deterministic
