@@ -1,3 +1,9 @@
+initializer-dist (3:9.2-1) unstable; urgency=medium
+
+  * New upstream version (local package).
+
+ -- Patrick Schleizer <adrelanos@whonix.org>  Sun, 06 Sep 2026 16:37:19 +0000
+
 initializer-dist (3:9.1-1) unstable; urgency=medium
 
   * New upstream version (local package).
