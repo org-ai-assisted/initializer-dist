@@ -96,10 +96,13 @@ fi
 ## One pipeline rather than a name loop: debconf-communicate reads its commands from stdin,
 ## so the matched question names go straight in. The pattern covers the BIOS variant
 ## (grub-pc) and the _empty / _disks_changed companions, which record device paths too.
+##
+## Keeping LC_ALL=C here even though it's declared above to prevent potential
+## future bugs.
 grep --only-matching --extended-regexp -- '^Name: grub-[^/[:space:]]+/install_devices[a-z_]*' \
    /var/cache/debconf/config.dat \
    | cut -d' ' -f2- \
-   | sort --unique \
+   | LC_ALL=C sort --unique \
    | sed 's/^/RESET /' \
    | debconf-communicate >/dev/null || true
 
@@ -129,8 +132,7 @@ unset debconf_device_leak_detect_output
 ## paths). Safe to delete: ldconfig recreates it on the next run, and any package install
 ## triggers one.
 ##
-## TODO-HUMAN-ONLY: Verify that AI is correct about how the aux-cache works (this must be
-## done by a human)
+## TODO-HUMAN-ONLY: Verify that AI is correct about how the aux-cache works
 safe-rm --force -- /var/cache/ldconfig/aux-cache || true
 
 ## non-deterministic
