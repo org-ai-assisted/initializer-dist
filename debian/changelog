@@ -1,3 +1,27 @@
+initializer-dist (3:9.3-1) unstable; urgency=medium
+
+  * New upstream version (local package).
+
+ -- Patrick Schleizer <adrelanos@whonix.org>  Tue, 08 Sep 2026 15:28:08 +0000
+
+initializer-dist (3:9.2-1) unstable; urgency=medium
+
+  * New upstream version (local package).
+
+ -- Patrick Schleizer <adrelanos@whonix.org>  Sun, 06 Sep 2026 16:37:19 +0000
+
+initializer-dist (3:9.1-1) unstable; urgency=medium
+
+  * New upstream version (local package).
+
+ -- Patrick Schleizer <adrelanos@whonix.org>  Tue, 25 Aug 2026 03:17:21 +0000
+
+initializer-dist (3:9.0-1) unstable; urgency=medium
+
+  * New upstream version (local package).
+
+ -- Patrick Schleizer <adrelanos@whonix.org>  Mon, 10 Aug 2026 17:07:21 +0000
+
 initializer-dist (3:8.9-1) unstable; urgency=medium
 
   * New upstream version (local package).
