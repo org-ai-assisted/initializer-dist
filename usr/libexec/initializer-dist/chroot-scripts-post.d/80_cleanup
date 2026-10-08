@@ -137,9 +137,9 @@ check_debconf_device_leak() {
 
 tmp_debugging() {
    printf '%s\n' "DEBUG: TMP: '${TMP-}'" || true
-   printf '%s\n' "DEBUG: TMP: '${TEMP-}'" || true
-   printf '%s\n' "DEBUG: TMP: '${TMPDIR-}'" || true
-   printf '%s\n' "DEBUG: TMP: '${TEMPDIR-}'" || true
+   printf '%s\n' "DEBUG: TEMP: '${TEMP-}'" || true
+   printf '%s\n' "DEBUG: TMPDIR: '${TMPDIR-}'" || true
+   printf '%s\n' "DEBUG: TEMPDIR: '${TEMPDIR-}'" || true
    test -d /tmp || printf '%s\n' "DEBUG: folder /tmp missing!" || true
    test -w /tmp || printf '%s\n' "DEBUG: folder /tmp not writeable!" || true
    stat /tmp || printf '%s\n' "DEBUG: stat /tmp failed!" || true
