@@ -43,15 +43,22 @@ if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
    exit 0
 fi
 
-sbom_file="/usr/share/sbom/system.cdx.json"
+## Output dir and os-release path are env-overridable ONLY so a unit test can
+## redirect them to a tmpdir fixture; unset (production) they are the real
+## absolute paths, byte-identical to a hardcoded value.
+sbom_file="${SBOM_OUTPUT_DIR:-/usr/share/sbom}/system.cdx.json"
+os_release_file="${SBOM_OSRELEASE_FILE:-/etc/os-release}"
 
 ## Root component identity and a deterministic serial, both derived from the
 ## image's own os-release so this is identical across build pipelines.
 distro_id="debian"
 distro_version=""
-if [ -r /etc/os-release ]; then
-   distro_id="$(. /etc/os-release; printf '%s' "${ID:-debian}")"
-   distro_version="$(. /etc/os-release; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
+if [ -r "${os_release_file}" ]; then
+   ## os-release is a runtime file (the image's), not a repo file to follow.
+   # shellcheck disable=SC1090
+   distro_id="$(. "${os_release_file}"; printf '%s' "${ID:-debian}")"
+   # shellcheck disable=SC1090
+   distro_version="$(. "${os_release_file}"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
 fi
 distro_arch="$(dpkg --print-architecture)"
 
