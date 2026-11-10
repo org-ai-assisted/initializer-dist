@@ -3,12 +3,13 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## Emit an image-level, as-built CycloneDX SBOM of the whole system from the
-## live dpkg database via debsbom, embedded at /usr/share/sbom/system.cdx.json.
-## This is a point-in-time record of what the image shipped; it is NOT updated
-## after deployment. The live bill of materials of a running system is the dpkg
-## database itself, from which a current SBOM is regenerated on demand
-## (debsbom generate). Runs in both the image pipeline (via
+## Embed an image-level, as-built CycloneDX SBOM at /usr/share/sbom/system.cdx.json
+## by calling the shared 'derivative-sbom' helper with a pinned timestamp. This
+## is a thin, build-specific wrapper: it owns only the reproducibility context
+## (SOURCE_DATE_EPOCH -> --timestamp, mtime pin) and the skip logic; the SBOM
+## generation lives in derivative-sbom, the same tool a user runs to regenerate
+## an up-to-date SBOM after upgrades (the embedded one is a point-in-time record,
+## NOT refreshed by apt). Runs in both the image pipeline (via
 ## build-steps.d/*_run-chroot-scripts-post-d) and the Qubes template pipeline
 ## (via the qubes-builder plugin), so it must depend only on the image's own
 ## contents, never on derivative-maker help-steps state.
@@ -43,43 +44,17 @@ if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
    exit 0
 fi
 
-## Output dir and os-release path are env-overridable ONLY so a unit test can
-## redirect them to a tmpdir fixture; unset (production) they are the real
-## absolute paths, byte-identical to a hardcoded value.
+## Output dir is env-overridable ONLY so a unit test can redirect it to a
+## tmpdir; unset (production) it is the real path.
 sbom_file="${SBOM_OUTPUT_DIR:-/usr/share/sbom}/system.cdx.json"
-os_release_file="${SBOM_OSRELEASE_FILE:-/etc/os-release}"
 
-## Root component identity and a deterministic serial, both derived from the
-## image's own os-release so this is identical across build pipelines.
-distro_id="debian"
-distro_version=""
-if [ -r "${os_release_file}" ]; then
-   ## os-release is a runtime file (the image's), not a repo file to follow.
-   # shellcheck disable=SC1090
-   distro_id="$(. "${os_release_file}"; printf '%s' "${ID:-debian}")"
-   # shellcheck disable=SC1090
-   distro_version="$(. "${os_release_file}"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
-fi
-distro_arch="$(dpkg --print-architecture)"
-
-## debsbom injects a random serial and a wall-clock timestamp unless both are
-## pinned, and orders dependency edges via Python set iteration unless hash
-## randomization is disabled. Pin all three for byte-reproducible output.
-## uuidgen --sha1 produces the same RFC 4122 v5 UUID as a NAMESPACE_URL uuid5.
-export PYTHONHASHSEED=0
-sbom_serial="$(uuidgen --sha1 --namespace @url --name "sbom:${distro_id}:${distro_version}:${distro_arch}")"
+## Generation (derivative identity, debsbom, deterministic serial) lives in the
+## shared 'derivative-sbom' helper -- the SAME tool a user runs to refresh the
+## SBOM after upgrades. Here it is pinned to SOURCE_DATE_EPOCH so the embedded,
+## as-built SBOM is reproducible.
 sbom_timestamp="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%S+00:00)"
-
 mkdir --parents -- "$(dirname -- "${sbom_file}")"
-
-debsbom generate \
-   --sbom-type cdx \
-   --cdx-schema-version 1.6 \
-   --cdx-serialnumber "${sbom_serial}" \
-   --timestamp "${sbom_timestamp}" \
-   --distro-name "${distro_id}" \
-   --distro-version "${distro_version}" \
-   --out "${sbom_file}"
+derivative-sbom --out "${sbom_file}" --timestamp "${sbom_timestamp}"
 
 ## The reproducible reimage rebuilds the filesystem with mke2fs -d, which
 ## preserves regular-file mtimes. Pin this file's mtime so it does not vary.
