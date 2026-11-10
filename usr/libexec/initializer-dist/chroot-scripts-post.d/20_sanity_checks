@@ -8,16 +8,21 @@ set -o errexit
 set -o nounset
 set -o errtrace
 set -o pipefail
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
+
+# shellcheck disable=SC1091
+source /usr/libexec/helper-scripts/log_run_die.sh
 
 unexpected_key_file() {
-   error "ERROR: unexpected key file found!"
-   exit 1
+   die 1 "ERROR: unexpected key file found!"
 }
 
 own_filename="$(basename -- "${BASH_SOURCE[0]}")"
 for skip_script in ${SKIP_SCRIPTS-}; do
-   if [ "$skip_script" = "$own_filename" ]; then
-      true "INFO: Skipping $own_filename, because SKIP_SCRIPTS includes it."
+   if [ "${skip_script}" = "${own_filename}" ]; then
+      true "INFO: Skipping ${own_filename}, because SKIP_SCRIPTS includes it."
       exit 0
    fi
 done
@@ -27,8 +32,8 @@ unset skip_script
 ## Therefore we see if dpkg has to say something, and if yes, the system is
 ## broken and we abort.
 dpkg_audit_output="$(dpkg --audit 2>&1)"
-if [ ! "$dpkg_audit_output" = "" ]; then
-   error "dpkg_audit_output not empty!"
+if [ ! "${dpkg_audit_output}" = "" ]; then
+   die 1 "dpkg_audit_output not empty!"
 fi
 
 dpkg --configure -a
@@ -42,10 +47,10 @@ DEBIAN_FRONTEND=noninteractive dpkg-reconfigure tzdata
 
 debsums_output_1="$(debsums --list-missing 2>&1)"
 
-if [ "$debsums_output_1" = "" ]; then
+if [ "${debsums_output_1}" = "" ]; then
    true "INFO: Ok, no packages (or debs) with missing MD5 sums file found."
 else
-   error "ERROR: Packages (or debs) with missing MD5 sums file found!"
+   die 1 "ERROR: Packages (or debs) with missing MD5 sums file found!"
 fi
 
 debsums --silent || true
@@ -74,7 +79,7 @@ debsums --config --silent 2>&1 || true
 true "INFO: Listed changed configuration files."
 
 ## Provided by package: 'helper-scripts'
-# shellcheck source=/usr/sbin/shim-signed-mok-setup
+# shellcheck disable=SC1091
 source /usr/sbin/shim-signed-mok-setup
 ## sets: 'dkms_mok_*' variables
 dkms_mok_variables_set
