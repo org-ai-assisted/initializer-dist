@@ -1,0 +1,61 @@
+#!/bin/bash
+
+## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Embed an image-level, as-built CycloneDX SBOM at /usr/share/sbom/system.cdx.json
+## by calling the shared 'derivative-sbom' helper with a pinned timestamp. This
+## is a thin, build-specific wrapper: it owns only the reproducibility context
+## (SOURCE_DATE_EPOCH -> --timestamp, mtime pin) and the skip logic; the SBOM
+## generation lives in derivative-sbom, the same tool a user runs to regenerate
+## an up-to-date SBOM after upgrades (the embedded one is a point-in-time record,
+## NOT refreshed by apt). Runs in both the image pipeline (via
+## build-steps.d/*_run-chroot-scripts-post-d) and the Qubes template pipeline
+## (via the qubes-builder plugin), so it must depend only on the image's own
+## contents, never on derivative-maker help-steps state.
+
+## Keep the command trace: it is this script's diagnostic output.
+set -x
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
+
+own_filename="$(basename -- "${BASH_SOURCE[0]}")"
+
+# shellcheck disable=SC2086
+for skip_script in ${SKIP_SCRIPTS:-}; do
+   if [ "${skip_script}" = "${own_filename}" ]; then
+      true "INFO: Skipping ${own_filename}, because SKIP_SCRIPTS includes it."
+      exit 0
+   fi
+done
+unset skip_script
+
+## Reproducibility requires a pinned creation time. SOURCE_DATE_EPOCH is exported
+## by the image build and passed into this chroot. If it is unset (a build
+## pipeline without a reproducibility context), skip rather than emit a
+## wall-clock timestamp that would break reproducible builds.
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+   true "INFO: ${own_filename}: SOURCE_DATE_EPOCH unset; skipping SBOM generation."
+   exit 0
+fi
+
+## Output dir is env-overridable ONLY so a unit test can redirect it to a
+## tmpdir; unset (production) it is the real path.
+sbom_file="${SBOM_OUTPUT_DIR:-/usr/share/sbom}/system.cdx.json"
+
+## Generation (derivative identity, debsbom, deterministic serial) lives in the
+## shared 'derivative-sbom' helper -- the SAME tool a user runs to refresh the
+## SBOM after upgrades. Here it is pinned to SOURCE_DATE_EPOCH so the embedded,
+## as-built SBOM is reproducible.
+sbom_timestamp="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%S+00:00)"
+mkdir --parents -- "$(dirname -- "${sbom_file}")"
+derivative-sbom --out "${sbom_file}" --timestamp "${sbom_timestamp}"
+
+## The reproducible reimage rebuilds the filesystem with mke2fs -d, which
+## preserves regular-file mtimes. Pin this file's mtime so it does not vary.
+touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" -- "${sbom_file}"
