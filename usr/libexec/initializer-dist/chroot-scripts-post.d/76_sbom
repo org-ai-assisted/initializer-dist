@@ -33,7 +33,7 @@ unset skip_script
 sbom_file="${SBOM_OUTPUT_DIR:-/usr/share/sbom}/system.cdx.json"
 mkdir --parents -- "$(dirname -- "${sbom_file}")"
 
-if [ -n "${SOURCE_DATE_EPOCH}" ]; then
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
    sbom_timestamp="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%S+00:00)"
    derivative-sbom --out "${sbom_file}" --timestamp "${sbom_timestamp}"
    touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" -- "${sbom_file}"
