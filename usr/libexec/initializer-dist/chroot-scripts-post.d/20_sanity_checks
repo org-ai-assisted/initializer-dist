@@ -1,103 +1,137 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-set -x
-set -o errexit
-set -o nounset
-set -o errtrace
-set -o pipefail
-shopt -s inherit_errexit
-shopt -s shift_verbose
-export LC_ALL=C
+## provides was_executed
+# shellcheck source=../../../../../helper-scripts/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+if was_executed "${BASH_SOURCE[0]}"; then
+   set -x
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+fi
 
 # shellcheck source=../../../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
-source /usr/libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
+## Provided by package: 'helper-scripts'
+# shellcheck source=../../../../../helper-scripts/usr/sbin/shim-signed-mok-setup
+source "${HELPER_SCRIPTS_PATH:-}"/usr/sbin/shim-signed-mok-setup
+## sets: 'image_builtin_mok_absent_marker_basename'
+# shellcheck source=../../../../../helper-scripts/usr/libexec/helper-scripts/legacy_dist_do_once_markers.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/legacy_dist_do_once_markers.bsh
+
+## Set early: unexpected_key_file (called during the key-absence assertions)
+## references the marker path, so both the dir and the basename must already
+## exist before those assertions run.
+legacy_dist_do_once_dir='/var/lib/legacy-dist/do_once'
+
+should_skip() {
+   local skip_script
+   # shellcheck disable=SC2086
+   for skip_script in ${SKIP_SCRIPTS:-}; do
+      if [ "${skip_script}" = "${own_filename}" ]; then
+         return 0
+      fi
+   done
+   return 1
+}
 
 unexpected_key_file() {
+   ## A built-in MOK key means the image is NOT clean. Ensure it cannot also
+   ## carry the "built without a MOK key" marker (which tells the runtime to
+   ## trust any key as legitimate), then abort the build.
+   safe-rm --force -- "${legacy_dist_do_once_dir}/${image_builtin_mok_absent_marker_basename}"
    die 1 "ERROR: unexpected key file found!"
 }
 
-own_filename="$(basename -- "${BASH_SOURCE[0]}")"
-for skip_script in ${SKIP_SCRIPTS-}; do
-   if [ "${skip_script}" = "${own_filename}" ]; then
+check_dpkg_sane() {
+   local dpkg_audit_output
+   ## dpkg --audit does not return anything, if everything is fine.
+   ## Therefore we see if dpkg has to say something, and if yes, the system is
+   ## broken and we abort.
+   dpkg_audit_output="$(dpkg --audit 2>&1)"
+   if [ ! "${dpkg_audit_output}" = "" ]; then
+      die 1 "dpkg_audit_output not empty!"
+   fi
+
+   ## style-ok: allow-dpkg - configure all pending packages during the build
+   dpkg --configure -a
+
+   ## Disabled. Trixie no longer ships sysctl.conf, but sysctl -p assumes
+   ## sysctl.conf exists. The file was entirely commented out anyway, so this was
+   ## little more than a no-op.
+   #sysctl -p
+
+   DEBIAN_FRONTEND=noninteractive dpkg-reconfigure tzdata
+}
+
+check_debsums() {
+   local debsums_output_1
+   debsums_output_1="$(debsums --list-missing 2>&1)"
+
+   if [ "${debsums_output_1}" = "" ]; then
+      true "INFO: Ok, no packages (or debs) with missing MD5 sums file found."
+   else
+      die 1 "ERROR: Packages (or debs) with missing MD5 sums file found!"
+   fi
+
+   debsums --silent || true
+
+   # debsums: missing file /lib/modules/4.19.0-4-amd64/kernel/drivers/staging/vboxvideo/vboxvideo.ko (from linux-image-4.19.0-4-amd64 package)
+   # debsums: missing file /lib/modules/4.19.0-4-amd64/kernel/drivers/virt/vboxguest/vboxguest.ko (from linux-image-4.19.0-4-amd64 package)
+
+   true "INFO: Listing changed configuration files..."
+   true "      (Only an information, no check...)"
+   true "      (Has to be reviewed manually by the builder.)"
+   true "      (A differencing /etc/resolv.conf.whonix is expected when building \
+Virtual Machine images, because the /etc/resolv.conf from the host has been mounted inside the image.)"
+
+   debsums --config --silent 2>&1 || true
+
+   true "INFO: Listed changed configuration files."
+}
+
+check_no_builtin_mok_and_mark() {
+   ## sets: 'dkms_mok_*' variables
+   dkms_mok_variables_set
+
+   ! test -e "${dkms_mok_public_file}" || unexpected_key_file
+   ! test -e "${dkms_mok_private_file}" || unexpected_key_file
+   ! test -e "${shim_mok_public_file}" || unexpected_key_file
+   ! test -e "${shim_mok_private_file}" || unexpected_key_file
+
+   ## The assertions above PROVE this image ships no built-in MOK key (the build
+   ## aborts otherwise). Record that proof so check-image-builtin-mok treats any
+   ## MOK key that appears on this image later as a legitimate per-machine runtime
+   ## key, instead of misreporting it as "embedded in the installation image" and
+   ## deleting it. Older images lack this marker and keep the detect-and-clean path.
+   mkdir --parents -- "${legacy_dist_do_once_dir}"
+   touch -- "${legacy_dist_do_once_dir}/${image_builtin_mok_absent_marker_basename}"
+}
+
+main() {
+   own_filename="$(basename -- "${BASH_SOURCE[0]}")"
+   if should_skip; then
       true "INFO: Skipping ${own_filename}, because SKIP_SCRIPTS includes it."
       exit 0
    fi
-done
-unset skip_script
 
-## dpkg --audit does not return anything, if everything is fine.
-## Therefore we see if dpkg has to say something, and if yes, the system is
-## broken and we abort.
-dpkg_audit_output="$(dpkg --audit 2>&1)"
-if [ ! "${dpkg_audit_output}" = "" ]; then
-   die 1 "dpkg_audit_output not empty!"
+   check_dpkg_sane
+   check_debsums
+   check_no_builtin_mok_and_mark
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
 fi
-
-dpkg --configure -a
-
-## Disabled. Trixie no longer ships sysctl.conf, but sysctl -p assumes
-## sysctl.conf exists. The file was entirely commented out anyway, so this was
-## little more than a no-op.
-#sysctl -p
-
-DEBIAN_FRONTEND=noninteractive dpkg-reconfigure tzdata
-
-debsums_output_1="$(debsums --list-missing 2>&1)"
-
-if [ "${debsums_output_1}" = "" ]; then
-   true "INFO: Ok, no packages (or debs) with missing MD5 sums file found."
-else
-   die 1 "ERROR: Packages (or debs) with missing MD5 sums file found!"
-fi
-
-debsums --silent || true
-
-# debsums: missing file /lib/modules/4.19.0-4-amd64/kernel/drivers/staging/vboxvideo/vboxvideo.ko (from linux-image-4.19.0-4-amd64 package)
-# debsums: missing file /lib/modules/4.19.0-4-amd64/kernel/drivers/virt/vboxguest/vboxguest.ko (from linux-image-4.19.0-4-amd64 package)
-
-# if [ ! "$exit_code" = "0" ]; then
-#    error "ERROR: debsums returned a non-zero exit_code: $exit_code!"
-# fi
-#
-# if [ "$debsums_output_2" = "" ]; then
-#    true "INFO: Ok, no packages (or debs) with missing files file found."
-# else
-#    error "ERROR: Packages (or debs) with missing files found!"
-# fi
-
-true "INFO: Listing changed configuration files..."
-true "      (Only an information, no check...)"
-true "      (Has to be reviewed manually by the builder.)"
-true "      (A differencing /etc/resolv.conf.whonix is expected when building \
-Virtual Machine images, because the /etc/resolv.conf from the host has been mounted inside the image.)"
-
-debsums --config --silent 2>&1 || true
-
-true "INFO: Listed changed configuration files."
-
-## Provided by package: 'helper-scripts'
-# shellcheck source=../../../../../helper-scripts/usr/sbin/shim-signed-mok-setup
-source /usr/sbin/shim-signed-mok-setup
-## sets: 'dkms_mok_*' variables
-dkms_mok_variables_set
-
-! test -e "${dkms_mok_public_file}" || unexpected_key_file
-! test -e "${dkms_mok_private_file}" || unexpected_key_file
-! test -e "${shim_mok_public_file}" || unexpected_key_file
-! test -e "${shim_mok_private_file}" || unexpected_key_file
-
-## The assertions above PROVE this image ships no built-in MOK key (the build
-## aborts otherwise). Record that proof so check-image-builtin-mok treats any
-## MOK key that appears on this image later as a legitimate per-machine runtime
-## key, instead of misreporting it as "embedded in the installation image" and
-## deleting it. Older images lack this marker and keep the detect-and-clean path.
-## Provided by package: 'helper-scripts'
-# shellcheck source=../../../../../helper-scripts/usr/libexec/helper-scripts/legacy_dist_do_once_markers.bsh
-source /usr/libexec/helper-scripts/legacy_dist_do_once_markers.bsh
-## sets: 'image_builtin_mok_absent_marker_basename'
-legacy_dist_do_once_dir='/var/lib/legacy-dist/do_once'
-mkdir --parents -- "${legacy_dist_do_once_dir}"
-touch -- "${legacy_dist_do_once_dir}/${image_builtin_mok_absent_marker_basename}"
