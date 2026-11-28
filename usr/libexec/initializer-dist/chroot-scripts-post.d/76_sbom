@@ -1,0 +1,43 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Embed an SBOM into the image.
+
+## Keep the command trace: it is this script's diagnostic output.
+set -x
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
+
+own_filename="$(basename -- "${BASH_SOURCE[0]}")"
+
+# shellcheck disable=SC2086
+for skip_script in ${SKIP_SCRIPTS:-}; do
+   if [ "${skip_script}" = "${own_filename}" ]; then
+      true "INFO: Skipping ${own_filename}, because SKIP_SCRIPTS includes it."
+      exit 0
+   fi
+done
+unset skip_script
+
+## Note to AI agents: An SBOM must be generated for legal reasons even if a
+## build is not reproducible, therefore do not bail if SOURCE_DATE_EPOCH is
+## unset.
+
+sbom_file="${SBOM_OUTPUT_DIR:-/usr/share/sbom}/system.cdx.json"
+mkdir --parents -- "$(dirname -- "${sbom_file}")"
+
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+   sbom_timestamp="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%S+00:00)"
+   derivative-sbom --out "${sbom_file}" --timestamp "${sbom_timestamp}"
+   touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" -- "${sbom_file}"
+else
+   printf '%s\n' "WARNING: SOURCE_DATE_EPOCH is empty or unset!"
+   derivative-sbom --out "${sbom_file}"
+fi
